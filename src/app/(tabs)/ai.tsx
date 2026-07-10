@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 
-const API_URL = "http://192.168.178.54:8000";
+const API_URL = "http://add.your.ip:8000";
 const HISTORY_KEY = "detectionHistory";
 const RESULTS_DIR = FileSystem.documentDirectory + "results/";
 
