@@ -240,7 +240,7 @@ export default function AiScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 50, alignItems: 'center' },
   buttonRow: { flexDirection: 'row', gap: 12, marginBottom: 10 },
-  resultImage: { width: '100%', height: 400, marginTop: 10, borderRadius: 8 },
+  resultImage: { width: '100%', height: 400, marginTop: -50, borderRadius: 8 },
   total: { fontSize: 18, fontWeight: '600', marginTop: 16 },
   countLine: { fontSize: 16, marginTop: 4 },
   error: { color: 'red', marginTop: 12, textAlign: 'center' },
