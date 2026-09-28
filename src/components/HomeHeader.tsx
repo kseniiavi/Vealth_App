@@ -9,7 +9,7 @@ export default function HomeHeader() {
   });
 
   return (
-    <View style={globalStyles.header}>
+    <View style={globalStyles.sectionTitle}>
       <Text style={styles.date}>{currentDate}</Text>
     </View>
   );

@@ -4,7 +4,7 @@ import { ScrollView, Text } from 'react-native';
 export default function ProfileScreen() {
   return (
     <ScrollView style={globalStyles.container}>
-      <Text style={globalStyles.title}>Profile</Text>
+      <Text style={globalStyles.sectionTitle}>Profile</Text>
     </ScrollView>
   );
 }

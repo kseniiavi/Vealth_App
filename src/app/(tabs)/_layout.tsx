@@ -1,4 +1,4 @@
-import { colors } from '@/styles/global';
+import { colors, globalStyles } from '@/styles/global';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
@@ -7,11 +7,15 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: true,
-        tabBarStyle: {
-          backgroundColor: colors.background,
+        headerStyle: globalStyles.header,        // apply global header style
+        headerTitleStyle: globalStyles.title,
+        headerShadowVisible: false,
+        tabBarStyle: {                
+          backgroundColor: colors.bar,
           borderTopColor: colors.surface,
+          borderTopWidth: 1,
         },
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: colors.surface,
         tabBarInactiveTintColor: colors.textSecondary,
       }}
     >
@@ -36,7 +40,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name='ai'
         options={{
-          title: 'AI Assistant',
+          title: 'Teeth Analysis',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name='medical' size={size} color={color} />
           ),

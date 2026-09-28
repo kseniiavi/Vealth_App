@@ -4,7 +4,7 @@ import { ScrollView, Text } from 'react-native';
 export default function VetAssistantScreen() {
   return (
     <ScrollView style={globalStyles.container}>
-      <Text style={globalStyles.title}>Vet Assistant</Text>
+      <Text style={globalStyles.sectionTitle}>Vet Assistant</Text>
     </ScrollView>
   );
 }
