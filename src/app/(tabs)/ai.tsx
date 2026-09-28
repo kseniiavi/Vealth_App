@@ -1,41 +1,36 @@
+import { StyledButton } from '@/components/StyledButton';
+import { colors, globalStyles } from '@/styles/global';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Button,
   FlatList,
   Image,
   ScrollView, StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
+import ImageViewing from 'react-native-image-viewing';
 
-const API_URL = "http://add.your.ip:8000";
+const API_URL = "http://your ip adress:8000";
 const HISTORY_KEY = "detectionHistory";
 const RESULTS_DIR = FileSystem.documentDirectory + "results/";
 
 // --- Types ---------------------------------------------------------------
 
-interface Detection {
-  class_id: number;
-  class_name: string;
-  confidence: number;
-  bbox: number[];
-}
-
 interface DetectionResponse {
-  detections: Detection[];
-  counts: Record<string, number>;
   total_count: number;
-  image: string; // base64
+  all_counts: Record<string, number>;
+  image: string; // base64 (segmented)
 }
 
 interface HistoryEntry {
   id: string;
-  localUri: string;          // permanent file path on device
+  originalUri?: string;      // photo before segmentation (optional for old entries)
+  localUri: string;          // segmented photo
   counts: Record<string, number>;
   totalCount: number;
   timestamp: number;
@@ -49,7 +44,10 @@ export default function AiScreen() {
   const [currentResult, setCurrentResult] = useState<HistoryEntry | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
-  // Load saved history once when the screen first mounts
+  // Zoom viewer state
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
   useEffect(() => {
     loadHistory();
     ensureResultsDirExists();
@@ -74,7 +72,6 @@ export default function AiScreen() {
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
   };
 
-  // ---- Pick from gallery ----
   const pickFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -90,7 +87,6 @@ export default function AiScreen() {
     }
   };
 
-  // ---- Take a new photo ----
   const takePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
@@ -103,7 +99,6 @@ export default function AiScreen() {
     }
   };
 
-  // ---- Send image to FastAPI, save result permanently, show result screen ----
   const runDetection = async (uri: string) => {
     setLoading(true);
     setErrorMsg(null);
@@ -128,27 +123,34 @@ export default function AiScreen() {
 
       const data: DetectionResponse = await response.json();
 
-      // Write the base64 image to a REAL file on the device, permanently.
-      const filename = `result_${Date.now()}.jpg`;
-      const localUri = RESULTS_DIR + filename;
+      const timestamp = Date.now();
+
+      // 1) Save the segmented image (from the server) permanently
+      const segFilename = `result_${timestamp}.jpg`;
+      const localUri = RESULTS_DIR + segFilename;
       await FileSystem.writeAsStringAsync(localUri, data.image, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
+      // 2) Copy the original photo permanently too
+      //    (the picker/camera uri is a temporary cache file)
+      const originalUri = RESULTS_DIR + `original_${timestamp}.jpg`;
+      await FileSystem.copyAsync({ from: uri, to: originalUri });
+
       const entry: HistoryEntry = {
-        id: filename,
+        id: segFilename,
+        originalUri,
         localUri,
-        counts: data.counts,
+        counts: data.all_counts,
         totalCount: data.total_count,
-        timestamp: Date.now(),
+        timestamp,
       };
 
-      // Add to history and persist the updated list
       const updated = [entry, ...history];
       await saveHistory(updated);
 
       setCurrentResult(entry);
-      setScreen('result'); // <-- immediately show the result screen
+      setScreen('result');
     } catch (error) {
       console.error("Detection failed:", error);
       setErrorMsg("Could not reach the server. Check that it's running and your phone is on the same Wi-Fi.");
@@ -158,46 +160,98 @@ export default function AiScreen() {
   };
 
   const goHome = () => {
+    setViewerVisible(false);
     setScreen('home');
     setCurrentResult(null);
   };
 
+  const openViewer = (index: number) => {
+    setViewerIndex(index);
+    setViewerVisible(true);
+  };
+
   // ---- RESULT SCREEN ----
   if (screen === 'result' && currentResult) {
+    // Build the list of zoomable images: [before, after]
+    // Old history entries have no original, so they only show the segmented one.
+    const viewerImages = currentResult.originalUri
+      ? [{ uri: currentResult.originalUri }, { uri: currentResult.localUri }]
+      : [{ uri: currentResult.localUri }];
+
     return (
-      <ScrollView contentContainerStyle={styles.container}>
-        <Image
-          source={{ uri: currentResult.localUri }}
-          style={styles.resultImage}
-          resizeMode="contain"
+      <>
+        <ScrollView contentContainerStyle={globalStyles.container}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={globalStyles.sectionTitle}>Result</Text>
+            <StyledButton title="Back" onPress={goHome} />
+          </View>
+
+          <View style={styles.imagesRow}>
+            {currentResult.originalUri && (
+              <TouchableOpacity style={styles.imageBox} onPress={() => openViewer(0)} activeOpacity={0.8}>
+                <Image
+                  source={{ uri: currentResult.originalUri }}
+                  style={styles.resultImage}
+                  resizeMode="contain"
+                />
+                <Text style={styles.imageLabel}>Before</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.imageBox}
+              onPress={() => openViewer(viewerImages.length - 1)}
+              activeOpacity={0.8}
+            >
+              <Image
+                source={{ uri: currentResult.localUri }}
+                style={styles.resultImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.imageLabel}>After</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.tapHint}>Tap an image to zoom</Text>
+
+          <Text style={[globalStyles.sectionTitle, { alignSelf: 'center' }]}>
+            Total detected teeth: {currentResult.totalCount}
+          </Text>
+          {Object.entries(currentResult.counts).map(([className, count]) => (
+            <Text key={className} style={[globalStyles.classes, { alignSelf: 'center' }]}>
+              {className}: {count}
+            </Text>
+          ))}
+        </ScrollView>
+
+        {/* Fullscreen zoom viewer: pinch/double-tap to zoom, swipe to switch before/after */}
+        <ImageViewing
+          images={viewerImages}
+          imageIndex={viewerIndex}
+          visible={viewerVisible}
+          onRequestClose={() => setViewerVisible(false)}
         />
-        <Text style={styles.total}>Total detected: {currentResult.totalCount}</Text>
-        {Object.entries(currentResult.counts).map(([className, count]) => (
-          <Text key={className} style={styles.countLine}>{className}: {count}</Text>
-        ))}
-        <View style={{ marginTop: 20 }}>
-          <Button title="Back" onPress={goHome} />
-        </View>
-      </ScrollView>
+      </>
     );
   }
 
   // ---- HOME SCREEN ----
   return (
-    <View style={styles.container}>
+    <View style={globalStyles.container}>
+      <Text style={globalStyles.sectionTitle}>Teeth Analysis</Text>
       <Text style={styles.introText}>
         You take pictures of your horses front upper and lower teeth.
         {'\n\n'}
         If its hard to do, watch our tutorial on “how to make your horse smile?”.
         {'\n\n'}
-        Our AI analyses them.
+        Our program analyses them.
         {'\n\n'}
         We give you a horse age estimation with scientific explanation and reasoning for results.
       </Text>
 
       <View style={styles.buttonRow}>
-        <Button title="Pick from Gallery" onPress={pickFromGallery} />
-        <Button title="Take Photo" onPress={takePhoto} />
+        <StyledButton title="Pick from Gallery" onPress={pickFromGallery} />
+        <StyledButton title="Take Photo" onPress={takePhoto} />
       </View>
 
       {loading && <ActivityIndicator size="large" style={{ marginTop: 20 }} />}
@@ -208,13 +262,14 @@ export default function AiScreen() {
         style={{ flex: 1 }}
         data={history}
         keyExtractor={(item) => item.id}
-        numColumns={2}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        numColumns={3}
+        contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 4 }}
         renderItem={({ item }) => (
           <TouchableOpacity
             onPress={() => { setCurrentResult(item); setScreen('result'); }}
             style={styles.historyItem}
           >
+            {/* localUri is the segmented image, so the preview shows the segmented photo */}
             <Image source={{ uri: item.localUri }} style={styles.thumbnail} />
 
             <Text style={styles.timestamp}>
@@ -238,12 +293,19 @@ export default function AiScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 50, alignItems: 'center' },
-  buttonRow: { flexDirection: 'row', gap: 12, marginBottom: 10 },
-  resultImage: { width: '100%', height: 400, marginTop: -50, borderRadius: 8 },
-  total: { fontSize: 18, fontWeight: '600', marginTop: 16 },
-  countLine: { fontSize: 16, marginTop: 4 },
+  introText: { fontSize: 14, marginBottom: 20, color: colors.textSecondary, textAlign: 'justify' },
+  buttonRow: { flexDirection: 'row', gap: 12, marginBottom: 10, alignSelf: 'center', marginTop: 20 },
+
+  // Side-by-side images
+  imagesRow: { flexDirection: 'row', gap: 10, marginTop: 20, justifyContent: 'center' },
+  imageBox: { flex: 1, alignItems: 'center' },
+  resultImage: { width: '100%', aspectRatio: 3 / 4, borderRadius: 16 },
+  imageLabel: { marginTop: 6, fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  tapHint: { alignSelf: 'center', fontSize: 12, color: colors.textSecondary, marginTop: 4, marginBottom: 16 },
+
   error: { color: 'red', marginTop: 12, textAlign: 'center' },
-  historyTitle: { fontSize: 16, fontWeight: '600', marginTop: 24, marginBottom: 8, alignSelf: 'flex-start' },
+  historyTitle: { fontSize: 18, fontWeight: '600', marginTop: 20, marginBottom: 10, alignSelf: 'center', color: colors.textSecondary },
+  historyItem: { flex: 1, margin: 4, alignItems: 'center' },
+  timestamp: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   thumbnail: { width: 100, height: 100, margin: 4, borderRadius: 6 },
 });
